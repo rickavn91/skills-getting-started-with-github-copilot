@@ -4,6 +4,17 @@ document.addEventListener("DOMContentLoaded", () => {
   const signupForm = document.getElementById("signup-form");
   const messageDiv = document.getElementById("message");
 
+  // Helper: simple initials from email/local-part
+  function getInitialsFromEmail(email) {
+    if (!email) return "?";
+    const local = email.split("@")[0];
+    const parts = local.split(/[._\-]/).filter(Boolean);
+    const initials = parts.length
+      ? parts.map(p => p[0]).slice(0,2).join("")
+      : local.slice(0,2);
+    return initials.toUpperCase();
+  }
+
   // Function to fetch activities from API
   async function fetchActivities() {
     try {
@@ -18,13 +29,35 @@ document.addEventListener("DOMContentLoaded", () => {
         const activityCard = document.createElement("div");
         activityCard.className = "activity-card";
 
-        const spotsLeft = details.max_participants - details.participants.length;
+        const spotsLeft = details.max_participants - (details.participants?.length || 0);
+
+        // Build participants HTML: show a pretty bulleted list with small initials badges.
+        let participantsHTML = "";
+        const participants = Array.isArray(details.participants) ? details.participants : [];
+        if (participants.length > 0) {
+          participantsHTML = `
+            <div class="participants">
+              <p class="participants-title"><strong>Participants:</strong></p>
+              <ul class="participants-list">
+                ${participants.map(p => {
+                  const initials = getInitialsFromEmail(p);
+                  // escape p for insertion
+                  const safe = String(p).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+                  return `<li class="participant-item"><span class="participant-badge">${initials}</span><span class="participant-text">${safe}</span></li>`;
+                }).join("")}
+              </ul>
+            </div>
+          `;
+        } else {
+          participantsHTML = `<p class="no-participants"><em>No participants yet — be the first to sign up!</em></p>`;
+        }
 
         activityCard.innerHTML = `
           <h4>${name}</h4>
           <p>${details.description}</p>
           <p><strong>Schedule:</strong> ${details.schedule}</p>
           <p><strong>Availability:</strong> ${spotsLeft} spots left</p>
+          ${participantsHTML}
         `;
 
         activitiesList.appendChild(activityCard);
