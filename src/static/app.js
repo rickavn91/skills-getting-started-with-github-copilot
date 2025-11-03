@@ -31,34 +31,87 @@ document.addEventListener("DOMContentLoaded", () => {
 
         const spotsLeft = details.max_participants - (details.participants?.length || 0);
 
-        // Build participants HTML: show a pretty bulleted list with small initials badges.
-        let participantsHTML = "";
-        const participants = Array.isArray(details.participants) ? details.participants : [];
-        if (participants.length > 0) {
-          participantsHTML = `
-            <div class="participants">
-              <p class="participants-title"><strong>Participants:</strong></p>
-              <ul class="participants-list">
-                ${participants.map(p => {
-                  const initials = getInitialsFromEmail(p);
-                  // escape p for insertion
-                  const safe = String(p).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-                  return `<li class="participant-item"><span class="participant-badge">${initials}</span><span class="participant-text">${safe}</span></li>`;
-                }).join("")}
-              </ul>
-            </div>
-          `;
-        } else {
-          participantsHTML = `<p class="no-participants"><em>No participants yet — be the first to sign up!</em></p>`;
-        }
-
+        // Build main activity card content (we'll append participants programmatically so
+        // we can attach delete handlers to each participant)
         activityCard.innerHTML = `
           <h4>${name}</h4>
           <p>${details.description}</p>
           <p><strong>Schedule:</strong> ${details.schedule}</p>
           <p><strong>Availability:</strong> ${spotsLeft} spots left</p>
-          ${participantsHTML}
         `;
+
+        // Build participants list DOM so we can add a delete button per participant
+        const participants = Array.isArray(details.participants) ? details.participants : [];
+        if (participants.length > 0) {
+          const participantsDiv = document.createElement('div');
+          participantsDiv.className = 'participants';
+
+          const titleP = document.createElement('p');
+          titleP.className = 'participants-title';
+          titleP.innerHTML = '<strong>Participants:</strong>';
+          participantsDiv.appendChild(titleP);
+
+          const ul = document.createElement('ul');
+          ul.className = 'participants-list';
+
+          participants.forEach(p => {
+            const li = document.createElement('li');
+            li.className = 'participant-item';
+            // store identifying info on the list item
+            li.dataset.email = p;
+            li.dataset.activity = name;
+
+            const initials = getInitialsFromEmail(p);
+            const badge = document.createElement('span');
+            badge.className = 'participant-badge';
+            badge.textContent = initials;
+
+            const text = document.createElement('span');
+            text.className = 'participant-text';
+            text.textContent = p;
+
+            // delete button
+            const del = document.createElement('button');
+            del.type = 'button';
+            del.className = 'participant-delete';
+            del.title = 'Remove participant';
+            del.setAttribute('aria-label', `Remove ${p}`);
+            del.textContent = '✖';
+
+            del.addEventListener('click', async (e) => {
+              e.preventDefault();
+              // call server to unregister
+              try {
+                const resp = await fetch(`/activities/${encodeURIComponent(name)}/participants?email=${encodeURIComponent(p)}`, {
+                  method: 'DELETE'
+                });
+
+                if (resp.ok) {
+                  // refresh activities to reflect change
+                  await fetchActivities();
+                } else {
+                  const err = await resp.json().catch(() => ({}));
+                  console.error('Failed to unregister participant', err);
+                }
+              } catch (err) {
+                console.error('Error unregistering participant', err);
+              }
+            });
+
+            li.appendChild(badge);
+            li.appendChild(text);
+            li.appendChild(del);
+            ul.appendChild(li);
+          });
+
+          participantsDiv.appendChild(ul);
+          activityCard.appendChild(participantsDiv);
+        } else {
+          const noP = document.createElement('p');
+          noP.className = 'no-participants';
+          noP.innerHTML = '<em>No participants yet — be the first to sign up!</em>';
+          activityCard.appendChild(noP);
+        }
 
         activitiesList.appendChild(activityCard);
 
@@ -93,11 +146,14 @@ document.addEventListener("DOMContentLoaded", () => {
 
       if (response.ok) {
         messageDiv.textContent = result.message;
-        messageDiv.className = "success";
+        // keep the base "message" class so styling applies
+        messageDiv.className = "message success";
         signupForm.reset();
+        // Refresh activities so the newly-signed-up participant appears immediately
+        await fetchActivities();
       } else {
         messageDiv.textContent = result.detail || "An error occurred";
-        messageDiv.className = "error";
+        messageDiv.className = "message error";
       }
 
       messageDiv.classList.remove("hidden");
